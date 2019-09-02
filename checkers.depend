@@ -1,0 +1,11 @@
+# depslib dependency file v1.0
+1567441004 source:/media/chris/ExtraDrive1/Projects/checkers/main.cpp
+	<stdio.h>
+	<stdlib.h>
+	<string.h>
+	<vector>
+	<exception>
+	<termios.h>
+	<unistd.h>
+	<conio.h>
+
