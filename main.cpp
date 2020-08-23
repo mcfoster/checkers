@@ -33,8 +33,8 @@ const char NewBoard[BoardSize] =
         "        r r r r  r r r rr r r r ";
 // MCF Debug
 //       12345678   12345678   12345678   12345678
-//        " b   b  " "        " "        " "    r   "
-//        "   r    " "        " " r      " "        ";
+//        "   b    " "      b " "        " "    r r "
+//        "     r  " "      r " "        " "        ";
 
 static char *main_board = nullptr;
 
@@ -367,118 +367,113 @@ TLocation getLocation()
  * @param color - Color of the checker being moved
  * @return index for best move.
  */
-int scoreMoves(char *board, std::vector<TMove *> *moves, char color)
+int scoreMoves(char *board, std::vector<TMove *> *moves, char mv_color)
 {
+    const int MaxLevel = 4;
     static int level = 0;
     static int winCount = 0;
     static int stallCnt = 0;
+    //static bool debug_print = false;
     char *tempBoard;
     const int MaxStallCnt = 30;
     level++;
-    printf("L=%d, ",level);
-    // MCF: debug
-    if(level > 20)
-        level=level;
-    int moveIdx = 0;
-    int hiScore = 0;
-    int moveCount = 0;
-//    printf("level: %d Move count %d color: %c\n", level, static_cast<int>(moves->size()), color);
-    for (TMove *pMove : *moves) {
-        moveCount++;
-        if(level == 1)
-            stallCnt = 0;
-        else {
-            stallCnt++;
-        }
-        try{
-            std::vector<TMove *> *tempMoves = new(std::vector<TMove *>);
-            tempBoard = strdup(board);
-            if(tempBoard == NULL)
-                printf("Level: %d, 'strdup' failed\n",level);
+    int moveidx = 0;
+    int maxidx;
+    int minidx;
+    int maxscore = 0;
+    int minscore = 99;
+    char tcolor = mv_color;
 
-            doMove(tempBoard, *pMove);
+    int idx = 0;
+    // For each move in list
+    for (TMove *pMove : *moves) {
+        // get a fresh copy of the board
+        tempBoard = strdup(board);
+        // Do the move
+        bool done = true;
+        TMove mv = *pMove;
+        std::vector<TMove *> *moveList = new std::vector<TMove *>();
+
+        //if((level==1) && (pMove->from.col == 5)&& (pMove->to.col == 6)){
+        //    debug_print = true; // print all move scores in this path
+        //    printf("\n");
+        //}
+        //else if(level==1)
+        //    debug_print = false;
+
+        do
+        {
+            done = true;
+            jumped = false;
+            doMove(tempBoard, mv);
+            clearMoves(moveList);
             if (jumped) {
                 bool jumps = false;
-                if(stallCnt>1)
-                    stallCnt--; // not stalled if jumping
                 // Look for double jump
                 jumped = false;
                 for (int r_plus = -1; r_plus <= 1; r_plus += 2)
                     for (int c_plus = -1; c_plus <= 1; c_plus += 2)
-                        checkJump(tempBoard, tempMoves, jumpPos.row - 1, jumpPos.col - 1,
+                        checkJump(tempBoard, moveList, jumpPos.row - 1, jumpPos.col - 1,
                                   r_plus, c_plus, &jumps);
-            }
-            // Found pMove in the valid pMove list
-            if (tempMoves->size() > 0)  // More jumps found
-            {
-                scoreMoves(tempBoard, tempMoves, color);
-                if(level == 1) {
-                    pMove->score = winCount;
-                    if(hiScore < pMove->score)
-                        hiScore = pMove->score;
-                    winCount = 0;
+                // Found move in the valid move list
+                if (moveList->size() > 0)  // No more jumps found
+                {
+                    mv = *(*moveList)[0];
+                    done = false;
                 }
-            } else {
-                if (color == compColor)
-                    color = userColor;
-                else
-                    color = compColor;
             }
+        } while(!done);
+        tcolor = (mv_color == compColor) ? userColor : compColor;
+
+
+        pMove->score = 0;
+        // If level < MaxLevel
+        if(level < MaxLevel)
+        {
+
+            // Get tlist = list of counter moves
+            std::vector<TMove *> *tempMoves = getValidMoves(tempBoard, tcolor);
+
+            if(tempMoves->size() > 0){
+                // idx = scoreMoves tlist color
+                int tidx = scoreMoves(tempBoard, tempMoves, tcolor);
+                pMove->score = (*tempMoves)[tidx]->score;
+                //pMove->score += getScore(tempBoard);
+            }
+            // Cleanup
             clearMoves(tempMoves);
             delete (tempMoves);
+        }
+        pMove->score += getScore(tempBoard);  // Perhapps subtract level?
+        if(pMove->score > maxscore){
+            maxscore = pMove->score;
+            maxidx = idx;
+        }
+        if(pMove->score < minscore){
+            minscore = pMove->score;
+            minidx = idx;
+        }
+        //if(debug_print)
+        //{
+        //    showBoard(tempBoard);
+        //    printf("L=%d, from=%d,%d, to=%d,%d, score=%d, color='%c'\n", level, pMove->from.row, pMove->from.col,
+        //        pMove->to.row, pMove->to.col, pMove->score, mv_color);
+        //}
 
-            std::vector<TMove *> *moveList = getValidMoves(tempBoard, color);
-            if(moveList->size() >0){
-                // some move sanerios will go forever
-                if(!((level >1) && (stallCnt > MaxStallCnt)))
-                {
-                    scoreMoves(tempBoard, moveList, color);
-                    if(level == 1) {
-                        pMove->score = winCount;
-                        if(hiScore < pMove->score)
-                            hiScore = pMove->score;
-                        winCount = 0;
-                    }
-                }
-                else {
-                    if(getScore(board) > 99)
-                        winCount++;
-                }
-            }
-            else {
-                if (color == userColor)
-                    winCount++;
-            }
-            clearMoves(moveList);
-            delete(moveList);
-            free(tempBoard);
-        }
-        catch(std::exception &e){
-            printf("Level: %d, Exception: %s\n",level , e.what());
-        }
-    } // nextmove
+        free(tempBoard);
+        idx++;
 
-    if(level == 1)
-    {
-        stallCnt = 0;
-        std::vector<int> idxList;
-        int idx = 0;
-        for (TMove *move : *moves) {
-            if (move->score >= hiScore) {
-                idxList.insert(idxList.end(), idx);
-            }
-            idx++;
-        }
-        int sz = static_cast<int>(idxList.size());
-        if (sz > 0) {
-            moveIdx = idxList[rand() % sz];
-        }
-        idxList.clear();
-        printf("Move index = %d\n", moveIdx);
     }
+
+    if(mv_color == currentColor)
+        moveidx = maxidx;
+    else
+        moveidx = minidx;
+
     level--;
-    return moveIdx;
+    return moveidx;
 } // scoreMoves()
+
 
 /****************************************************************************
  * Return a copy of a move list vector.
@@ -519,13 +514,13 @@ int getScore(char *board)
             if (c == userColor) {
                 userCheckers++;
                 if ((colIdx) == 0 || (colIdx == (Cols - 1)))
-                    userCheckers += .1; // Slightly better along the wall
+                    userCheckers += 1;
             } else if (c == (userColor & 0xDF))
                 userCheckers += 1.5; // kings count more
             else if (c == compColor) {
                 compCheckers++;
                 if ((colIdx) == 0 || (colIdx == (Cols - 1)))
-                    compCheckers += .1; // Slightly better along the wall
+                    compCheckers +=  1;
             } else if (c == (compColor & 0xDF))
                 compCheckers += 1.5; // kings count more
         } // next colIdx
@@ -713,7 +708,6 @@ void showBoard(char *board)
     }
     printf("\n%s\n", line);
 } // showBoard
-
 
 
 #ifdef LINUX_APP
